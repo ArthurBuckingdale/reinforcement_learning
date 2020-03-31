@@ -10,6 +10,11 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
 % Revised: 10-10-2019
 % Copyright 2019 The MathWorks, Inc.
 
+
+
+%this properties section defines the use viewable parameters and one that
+%we will be able to change in the script because they're part of the
+%environment when it becomes initialised. 
     properties
         % Mass of rocket (kg)
         Mass = 1;
@@ -25,6 +30,9 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         
         % Bounds on thrust (N)
         Thrust = 10
+        
+        % Bounds on angles [degrees]
+        Angle = [0 90]
                 
         % Sample time (s)
         Ts = 0.1
@@ -41,7 +49,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
     
     properties (Hidden)        
         % Agent is in continuous mode
-        UseContinuousActions = false 
+        UseContinuousActions = true 
         
         % Log for actions and states
         LoggedSignals = cell(2,1)
@@ -56,9 +64,27 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         Visualizer = []
     end
     
+%the methods below are part of the obligatory functions which are
+%required for the environment. They perform things like the following:
+%1. constructors for the environment, defining the action space and the
+%observation space(observations are what's coming in from our sensors and
+%the action space is what's being output from our RL agent). 
+%2. Here are the
+%functions which will validate and set our parameters that we place in. 
+%3.It also contains both the soft and hard reset values that are needed for the
+%episodes to initialise after they. 
+%4.also contains functions which will
+%allow us to plot and sim the environment where we can see the agent
+%interacting with the environment. 
+%5. contains the step function. this is what is taking in the time and
+%action parameters to give the feedback for reward and if we've failed the
+%environment parameters or not. 
+%6.the reward is calculated here and this is where we want to go and modify
+%it. 
+%last note these are the public 
     methods
         
-        function this = SolidRocketLander(ActionInfo)
+        function this = SolidRocketLander(ActionInfo) % here is our constructor function
             
             % Define observation info dimension of the observation space
             ObservationInfo(1) = rlNumericSpec([7 1 1]);
@@ -66,7 +92,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             
             % Define action info dimension of the action space
             ActionInfo(1) = rlNumericSpec([2 1 1]);
-            ActionInfo(1).Name = 'thrusts';
+            ActionInfo(1).Name = 'angles';
             
             % Create environment
             this = this@rl.env.MATLABEnvironment(ObservationInfo,ActionInfo);
@@ -79,6 +105,8 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             
         end
         
+        % below is the set of functions which are validating and setting
+        % the paremeters from properties
         function set.UseContinuousActions(this,val)
             validateattributes(val,{'numeric'},{'finite','real','scalar'},'','UseContinuousActions');
             this.UseContinuousActions = logical(val);
@@ -108,7 +136,12 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         
         function set.Thrust(this,val)
             validateattributes(val,{'numeric'},{'finite','real','positive','scalar'},'','Thrust');
-            this.ThrustLimits = sort(val);
+            this.Thrust = val;
+        end
+        
+        function set.Angle(this,val)
+            validateattributes(val,{'numeric'},{'finite','real','positive','vector','numel',2},'','Angle');
+            this.Angle = sort(val);
         end
         
         function set.Gravity(this,val)
@@ -137,12 +170,17 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             this.VisualizeStates = false;
         end
         
+        %this is the function which will perform the step. In the grid
+        %world, our step is literally a step from one block to another, but
+        %here, we are interating with our environment as time passes. It is
+        %in essence the same way we go about solving differential
+        %equations. 
         function [nextobs,reward,isdone,loggedSignals] = step(this,Action)
             
             loggedSignals = [];
             
             % Scale up the actions
-            action = Action .* this.ThrustLimits(2);
+            action = Action .* this.Angle(2);
             
             % Trapezoidal integration
             ts = this.Ts;
@@ -235,8 +273,21 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         
     end
     
+    %so these are the private access functions. These are the ones which I
+    %understand will be changing the action and computing the dynamics of
+    %the object to feed to the inputs of the NN. In order for this thing to
+    %land itself, it'll need to know its acceleration, velocity how far
+    %from the ground it is and its orientation relative to the ground for
+    %example. 
+    
     methods (Access = private)
         
+        %this is the function which is taking in the state of the object
+        %and updating the action information that it's going to take. This
+        %particular version can return two different types. One is
+        %continuous and the other is discreet. Since we're going to use angles
+        %we definitely require a discreet space for this, simply because
+        %more range is just better. 
         function updateActionInfo(this)
             LL = 0; 
             UL = 1;
@@ -257,9 +308,12 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
                     }';
                 this.ActionInfo = rlFiniteSetSpec(els);
             end
-            this.ActionInfo(1).Name = 'thrusts';
+            this.ActionInfo(1).Name = 'angles';
         end
         
+        %this is the function which is computing the dynamics. The MATLAB
+        %folks have documented it very well so no extra commentary is
+        %needed from me to explain this. 
         function [dx,Tfwd,Ttwist,action] = dynamics(this,x,action)
         % DYNAMICS calculates the state derivatives of the robot.
         %
@@ -292,18 +346,40 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         %       L1*ddt = -ddx
         %
             
-            action = max(this.ThrustLimits(1),min(this.ThrustLimits(2),action));
+        %now why does it have max min here hmmmmmm...Uncertain as to why
+        %this is here. Anyway the good thing is we do not require too much
+        %modification of this I think I will comment out this perplexing
+        %line anyways. 
+            %action = max(this.Thrust(1),min(this.Thrust(2),action));
             
-            Tfwd   = action(2) + action(1);
-            Ttwist = action(2) - action(1);
+            %okay so parden my with this intense block of text, but it's a
+            %bit necessary because the sin and cos might be a little
+            %confusing below. There are three different angles being used
+            %and two of them are contained in the action. The angle of the
+            %left hand rocket relative to the body and the angle of the
+            %right hand rocket relative to the body. We also have the angle
+            %of the body(called theta here) relative to the y axis. We will
+            %need to make some edits to the body dynamics calculations to
+            %account for this change. 
             
+            %so looks like this is the total force downwards vs the total
+            %force inducing a rotation in the body.
+            Tfwd   = this.Thrust.*action(2) + this.Thrust.*action(1);
+            Ttwist = this.Thrust.*action(2) - this.Thrust.*action(1);
+            
+            %these are the parameters which we've talked about before. They
+            %can be interfaced by the user. We will be playing with these
+            %to checkout the effects of Jupiter gravity on our lander for
+            %example. 
             L1_ = this.L1;
             L2_ = this.L2;
             m = this.Mass;
             g = this.Gravity;
-            % inertia for a flat disk
+            % inertia for a flat disk inertia in the rotation equivalent to
+            % mass i.e it resists changes in motion. 
             I = 0.5*m*L1_^2;
             
+            %this is our state vector. position and velocity and theta
             x_  = x(1); %#ok<NASGU>
             y_  = x(2); 
             t_  = x(3);
@@ -311,15 +387,30 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             dy_ = x(5);
             dt_ = x(6);
             
+            %so this is the various forces acting on our object. We can see
+            %the components for each side. the sin and cos of theta are
+            %telling us where our thrust is pointing since the body can
+            %roll. The rolling force is also added here and is affected by
+            %the center of gravity. We will show by changing this center of
+            %gravity the effect is has on our ability to land something.
+            %This is the section where we're introducing the angle of the
+            %spaccraft relative to the ground. and is the third angle used
+            %in this calculation. 
             Fx = -sin(t_) * Tfwd;
             Fy =  cos(t_) * Tfwd;
             Mz =  Ttwist * L2_  ;
             
             dx = zeros(6,1);
             
-            % ground penetration
+            % ground penetration. 
             yhat = y_ - L1_;
             
+            
+           %so this is interesting, we are changing the regime as we
+           %approach the ground. This is quite interesting. I think it
+           %makes sense, but also just very interesting. I'll need to
+           %observe the effects of this. It might just be there to level
+           %out the rocket once its CG is below the ground level. 
             if yhat < 0
                 % "normalized" for mass
                 k = 1e2;
@@ -335,7 +426,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
                 % treat as "falling" mass
                 dx(4) = Fx/m;
                 dx(5) = Fy/m - g;
-                dx(6) = Mz/I;
+                dx(6) = Mz/I; %the rotational equivalent of an acceleration
                 dx(1) = dx_;
                 dx(2) = dy_;
                 dx(3) = dt_;

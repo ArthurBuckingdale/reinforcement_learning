@@ -27,11 +27,47 @@ clear all
 %the thing that I will need to edit in order to have a different rocket
 %type. I will continue setting up this environment and script for now though.
 
-env = RocketLander;
+%this is the environment that i'm using to DEBUG
+env2 = RocketLander;
+actionInfo2 = getActionInfo(env2);
+observationInfo2 = getObservationInfo(env2);
+numObs2 = observationInfo2.Dimension(1);
+%numAct2 = numel(actionInfo2.Elements);
+
+%this is the environment that I want.
+env = SolidRocketLander;
 actionInfo = getActionInfo(env);
 observationInfo = getObservationInfo(env);
 numObs = observationInfo.Dimension(1);
-numAct = numel(actionInfo.Elements);
+%numAct = numel(actionInfo.Elements);
+
+%% the non trivial part. Modifying the RocketLander class
+%up till now, we've just copied code from the MATLAB example and added some
+%additional commentary for context and hopefully better understanding. We
+%now however need to make the less trivial changes to this RocketLander
+%class. I've created a SolidRocketLander class which is a copy of the
+%MATLAB one, but we are going to change the parameters that we require to
+%have constant thrust output from the boosters, but change the angle
+%relative to the ground where they're producing thrust in order to see what
+%happens. Taking a look at the class, we can see the properties. This is
+%where we will make edits to the non RL parameters. 
+%also cool sidebar it looks like this thing is actually computing integrals
+%from the force parameters. there is no cheating here and we're actually
+%evaluating the dynamics of the body. This is cool as all hell. 
+
+%the physical parameters of the situation:
+%these can be seen by the user as designed in the class. The properties
+%section of the class defines what the user can see. 
+
+env.Mass=1; %mass [kg]
+env.L1=10; %center of gravity top/bottom [m]
+env.L2=5;% center of gravity left/right [m]
+env.Gravity=9.806; %gravitational acceleration [m/s^2]
+env.Thrust=10; %thrust of our solid rocket [N]
+env.Ts=0.10; %sample time [s] the amount that we step by
+env.State=[0;10;0;0;0;0]; %state vector [m;m;m;m/s;m/s;m/s]
+env.LastAction=[0;0];
+env.TimeCount=0; %time since event start [s]
 
 %% create the RL agent: 1. critic network
 %MATLAB's example uses a PPO. If I understand correctly, this works on
@@ -44,21 +80,15 @@ numAct = numel(actionInfo.Elements);
 %here we initalise the size and the network weights
 criticLayerSizes = [200 100];
 actorLayerSizes = [200 100];
-createNetworkWeights;
+%createNetworkWeights;
 
 %this is defining the critic network architecture
 criticNetwork = [imageInputLayer([numObs 1 1],'Normalization','none','Name','observation')
-    fullyConnectedLayer(criticLayerSizes(1),'Name','CriticFC1', ...
-    'Weights',weights.criticFC1, ...
-    'Bias',bias.criticFC1)
+    fullyConnectedLayer(criticLayerSizes(1),'Name','CriticFC1')
     reluLayer('Name','CriticRelu1')
-    fullyConnectedLayer(criticLayerSizes(2),'Name','CriticFC2', ...
-    'Weights',weights.criticFC2, ...
-    'Bias',bias.criticFC2)
+    fullyConnectedLayer(criticLayerSizes(2),'Name','CriticFC2')
     reluLayer('Name','CriticRelu2')
-    fullyConnectedLayer(1,'Name','CriticOutput',...
-    'Weights',weights.criticOut,...
-    'Bias',bias.criticOut)];
+    fullyConnectedLayer(1,'Name','CriticOutput')];
 
 %this is calling the critic options and building the network.
 criticOpts = rlRepresentationOptions('LearnRate',1e-3);
@@ -72,19 +102,11 @@ critic = rlValueRepresentation(criticNetwork,env.getObservationInfo, ...
 
 %defining the architecture of the actor network. 
 actorNetwork = [imageInputLayer([numObs 1 1],'Normalization','none','Name','observation')
-    fullyConnectedLayer(actorLayerSizes(1),'Name','ActorFC1',...
-    'Weights',weights.actorFC1,...
-    'Bias',bias.actorFC1)
+    fullyConnectedLayer(actorLayerSizes(1),'Name','ActorFC1')
     reluLayer('Name','ActorRelu1')
-    fullyConnectedLayer(actorLayerSizes(2),'Name','ActorFC2',...
-    'Weights',weights.actorFC2,...
-    'Bias',bias.actorFC2)
+    fullyConnectedLayer(actorLayerSizes(2),'Name','ActorFC2')
     reluLayer('Name','ActorRelu2')
-    fullyConnectedLayer(numAct,'Name','Action',...
-    'Weights',weights.actorOut,...
-    'Bias',bias.actorOut)
-    softmaxLayer('Name','actionProbability')
-    ];
+    fullyConnectedLayer(4,'Name','Action')];
 
 %setting the options and initializing the actor network.
 actorOptions = rlRepresentationOptions('LearnRate',1e-3);
@@ -138,37 +160,10 @@ trainOpts = rlTrainingOptions(...
     'SaveAgentCriteria',"EpisodeReward",...
     'SaveAgentValue',11000);
 
-trainingStats = train(agent,env,trainOpts);
+trainingStats = train(agent,env2,trainOpts);
 
 
-%% the non trivial part. Modifying the RocketLander class
-%THIS WILL BE BEFORE TRAINING IN THE FUTURE
-%up till now, we've just copied code from the MATLAB example and added some
-%additional commentary for context and hopefully better understanding. We
-%now however need to make the less trivial changes to this RocketLander
-%class. I've created a SolidRocketLander class which is a copy of the
-%MATLAB one, but we are going to change the parameters that we require to
-%have constant thrust output from the boosters, but change the angle
-%relative to the ground where they're producing thrust in order to see what
-%happens. Taking a look at the class, we can see the properties. This is
-%where we will make edits to the non RL parameters. 
-%also cool sidebar it looks like this thing is actually computing integrals
-%from the force parameters. there is no cheating here and we're actually
-%evaluating the dynamics of the body. This is cool as all hell. 
 
-%the physical parameters of the situation:
-%these can be seen by the user as designed in the class. The properties
-%section of the class defines what the user can see. 
-
-env.Mass=1; %mass [kg]
-env.L1=10; %center of gravity top/bottom [m]
-env.l2=5;% center of gravity left/right [m]
-env.Gravity=9.806; %gravitational acceleration [m/s^2]
-env.Thrust=10; %thrust of our solid rocket [N]
-env.Ts=0.10; %sample time [s]
-env.State=[0;10;0;0;0;0]; %state vector [m;m;m;m/s;m/s;m/s]
-env.LastAction=[0;0];
-env.TimeCount=0; %time since event start [s]
 
 
 

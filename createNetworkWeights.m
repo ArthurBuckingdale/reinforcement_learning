@@ -9,8 +9,8 @@ bias.criticOut = 1e-3;
 
 weights.actorFC1 = sqrt(2/numObs)*(rand(actorLayerSizes(1),numObs)-0.5);
 weights.actorFC2 = sqrt(2/actorLayerSizes(1))*(rand(actorLayerSizes(2),actorLayerSizes(1))-0.5);
-weights.actorOut = sqrt(2/actorLayerSizes(2))*(rand(numAct,actorLayerSizes(2))-0.5);
+weights.actorOut = sqrt(2/actorLayerSizes(2))*(rand(2,actorLayerSizes(2))-0.5);
 
 bias.actorFC1 = 1e-3*ones(actorLayerSizes(1),1);
 bias.actorFC2 = 1e-3*ones(actorLayerSizes(2),1);
-bias.actorOut = 1e-3*ones(numAct,1);
+bias.actorOut = 1e-3*ones(2,1);

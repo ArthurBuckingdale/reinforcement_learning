@@ -39,7 +39,7 @@ classdef RocketLander < rl.env.MATLABEnvironment
     
     properties (Hidden)        
         % Agent is in continuous mode
-        UseContinuousActions = false 
+        UseContinuousActions = true 
         
         % Log for actions and states
         LoggedSignals = cell(2,1)
