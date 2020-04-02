@@ -27,12 +27,12 @@ clear all
 %the thing that I will need to edit in order to have a different rocket
 %type. I will continue setting up this environment and script for now though.
 
-%this is the environment that i'm using to DEBUG
-env2 = RocketLander;
-actionInfo2 = getActionInfo(env2);
-observationInfo2 = getObservationInfo(env2);
-numObs2 = observationInfo2.Dimension(1);
-%numAct2 = numel(actionInfo2.Elements);
+% %this is the environment that i'm using to DEBUG
+% env2 = RocketLander;
+% actionInfo2 = getActionInfo(env2);
+% observationInfo2 = getObservationInfo(env2);
+% numObs2 = observationInfo2.Dimension(1);
+% %numAct2 = numel(actionInfo2.Elements);
 
 %this is the environment that I want.
 env = SolidRocketLander;
@@ -40,6 +40,7 @@ actionInfo = getActionInfo(env);
 observationInfo = getObservationInfo(env);
 numObs = observationInfo.Dimension(1);
 %numAct = numel(actionInfo.Elements);
+
 
 %% the non trivial part. Modifying the RocketLander class
 %up till now, we've just copied code from the MATLAB example and added some
@@ -59,15 +60,15 @@ numObs = observationInfo.Dimension(1);
 %these can be seen by the user as designed in the class. The properties
 %section of the class defines what the user can see. 
 
-env.Mass=1; %mass [kg]
-env.L1=10; %center of gravity top/bottom [m]
-env.L2=5;% center of gravity left/right [m]
-env.Gravity=9.806; %gravitational acceleration [m/s^2]
-env.Thrust=10; %thrust of our solid rocket [N]
-env.Ts=0.10; %sample time [s] the amount that we step by
-env.State=[0;10;0;0;0;0]; %state vector [m;m;m;m/s;m/s;m/s]
-env.LastAction=[0;0];
-env.TimeCount=0; %time since event start [s]
+% env.Mass=1; %mass [kg]
+% env.L1=10; %center of gravity top/bottom [m]
+% env.L2=5;% center of gravity left/right [m]
+% env.Gravity=9.806; %gravitational acceleration [m/s^2]
+% env.Thrust=10; %thrust of our solid rocket [N]
+% env.Ts=0.10; %sample time [s] the amount that we step by
+% env.State=[10;10;10;1;1;1]; %state vector [m;m;m;m/s;m/s;m/s]
+% env.LastAction=[0;0];
+% env.TimeCount=0; %time since event start [s]
 
 %% create the RL agent: 1. critic network
 %MATLAB's example uses a PPO. If I understand correctly, this works on
@@ -100,19 +101,55 @@ critic = rlValueRepresentation(criticNetwork,env.getObservationInfo, ...
 %so we've initialized the critic network, let's do the same for the actor,
 %both will be needed,
 
-%defining the architecture of the actor network. 
-actorNetwork = [imageInputLayer([numObs 1 1],'Normalization','none','Name','observation')
-    fullyConnectedLayer(actorLayerSizes(1),'Name','ActorFC1')
-    reluLayer('Name','ActorRelu1')
-    fullyConnectedLayer(actorLayerSizes(2),'Name','ActorFC2')
-    reluLayer('Name','ActorRelu2')
-    fullyConnectedLayer(4,'Name','Action')];
+% %defining the architecture of the actor network. 
+% actorNetwork = [imageInputLayer([numObs 1 1],'Normalization','none','Name','observation')
+%     fullyConnectedLayer(actorLayerSizes(1),'Name','ActorFC1')
+%     reluLayer('Name','ActorRelu1')
+%     fullyConnectedLayer(actorLayerSizes(2),'Name','ActorFC2')
+%     reluLayer('Name','ActorRelu2')
+%     fullyConnectedLayer(2 ,'Name','Action')];
+% 
+% %setting the options and initializing the actor network.
+% actorOptions = rlRepresentationOptions('LearnRate',1e-3);
+% actor = rlStochasticActorRepresentation(actorNetwork,env.getObservationInfo,env.getActionInfo,...
+%     'Observation',{'observation'}, actorOptions);
 
-%setting the options and initializing the actor network.
+
+% observation path layers (6 by 1 input and a 2 by 1 output)
+inPath = [ imageInputLayer([7 1 1], 'Normalization','none','Name','myobs') 
+           fullyConnectedLayer(200,'Name','infc')
+           reluLayer('Name','relu1')
+           fullyConnectedLayer(100,'name','infc3')
+           reluLayer('Name','relu2')
+           fullyConnectedLayer(2,'Name','infc2') ];
+
+% path layers for mean value (2 by 1 input and 2 by 1 output)
+% using scalingLayer to scale the range
+meanPath = [ tanhLayer('Name','tanh'); 
+             scalingLayer('Name','scale','Scale',actionInfo.UpperLimit) ];
+
+% path layers for variance (2 by 1 input and output)
+% using softplus layer to make it non negative)
+variancePath =  softplusLayer('Name', 'splus');
+
+% conctatenate two inputs (along dimension #3) to form a single (4 by 1) output layer
+outLayer = concatenationLayer(3,2,'Name','gaussPars');
+
+% add layers to network object
+net = layerGraph(inPath);
+net = addLayers(net,meanPath);
+net = addLayers(net,variancePath);
+net = addLayers(net,outLayer);
+
+% connect layers
+net = connectLayers(net,'infc2','tanh/in');              % connect output of inPath to meanPath input
+net = connectLayers(net,'infc2','splus/in');             % connect output of inPath to variancePath input
+net = connectLayers(net,'scale','gaussPars/in1');       % connect output of meanPath to gaussPars input #1
+net = connectLayers(net,'splus','gaussPars/in2');       % connect output of variancePath to gaussPars input #2
+
 actorOptions = rlRepresentationOptions('LearnRate',1e-3);
-actor = rlStochasticActorRepresentation(actorNetwork,env.getObservationInfo,env.getActionInfo,...
-    'Observation',{'observation'}, actorOptions);
 
+actor = rlStochasticActorRepresentation(net,env.getObservationInfo,env.getActionInfo, 'Observation','myobs',actorOptions);
 %% create the RL agent: 3. agent options.
 %we now need to create the agent options itself. If i'm undestanding this
 %correctly, what the agent can do is defined in the environement. We need
@@ -160,7 +197,7 @@ trainOpts = rlTrainingOptions(...
     'SaveAgentCriteria',"EpisodeReward",...
     'SaveAgentValue',11000);
 
-trainingStats = train(agent,env2,trainOpts);
+trainingStats = train(agent,env,trainOpts);
 
 
 

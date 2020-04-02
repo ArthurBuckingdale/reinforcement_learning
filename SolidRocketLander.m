@@ -140,7 +140,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         end
         
         function set.Angle(this,val)
-            validateattributes(val,{'numeric'},{'finite','real','positive','vector','numel',2},'','Angle');
+            validateattributes(val,{'numeric'},{'finite','real','vector','numel',2},'','Angle');
             this.Angle = sort(val);
         end
         
@@ -174,7 +174,9 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         %world, our step is literally a step from one block to another, but
         %here, we are interating with our environment as time passes. It is
         %in essence the same way we go about solving differential
-        %equations. 
+        %equations. Note that because we have changed the way this agent
+        %interacts with the environment, its reard function which minimizes
+        %the reward no longer functions in the correct way. 
         function [nextobs,reward,isdone,loggedSignals] = step(this,Action)
             
             loggedSignals = [];
@@ -257,7 +259,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             x = [x0; y0; t0; 0; 0; 0];
             
             % Optional: reset to specific state
-            hardReset = false;
+            hardReset = true;
             if hardReset
                 x = [10;100;-45*pi/180;0;0;0;];  % Set the desired initial values here
             end
@@ -364,8 +366,9 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             
             %so looks like this is the total force downwards vs the total
             %force inducing a rotation in the body.
-            Tfwd   = this.Thrust.*action(2) + this.Thrust.*action(1);
-            Ttwist = this.Thrust.*action(2) - this.Thrust.*action(1);
+           
+            Tfwd   = this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
+            Ttwist = this.Thrust.*cosd(action(2)) - this.Thrust.*cosd(action(1));
             
             %these are the parameters which we've talked about before. They
             %can be interfaced by the user. We will be playing with these
@@ -430,7 +433,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
                 dx(1) = dx_;
                 dx(2) = dy_;
                 dx(3) = dt_;
-            end
+            end            
             
         end
         
