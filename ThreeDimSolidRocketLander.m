@@ -1,20 +1,43 @@
-classdef SolidRocketLander < rl.env.MATLABEnvironment
-% ROCKETLANDER environment models a 3-DOF disc-shaped rocket with mass. 
-%THIS CLASS WAS 99% MADE BY MATLAB. RC HAS MADE EDITS FOR SOLID ROCKETS
-% The rocket has two thrusters that are solid fuel rockets, so their thrust
-% will remain constant for the duration of the event. What will change
-% however is their angle relative to the ground. This ofcourse will allow 
-%thrust to be downwards or outwards controlling its yaw speed and vertical
-%speed. 
-%
+classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
+%This class is not written from scratch and parts of it are borrowed from
+%the folks at matlab. until now, this rocket land is just in two
+%dimentions. We not want to scale this up to three since we do not live in
+%a 2D world and this 2d rocket lander is essentially useless. In order to
+%do with we will leverage the SolidRocketLander class and up the number of
+%dimentions to three. This adds a shit load of problems, because we need to
+%deal with a whole new array of forces and twisting will now be a big deal.
+%to cope with three dimensions we are going to add another two solid rocket
+%boosters to our 'orbital drop' container. Imagine a cube with a solid
+%rocket booster strapped to each corner these solid rockets can shift
+%angles and they are going to extend outward following the diagonal of the
+%cube. just think of this being similar in control scheme to a drone with
+%an x-frame pattern. This is exactly what we're attempting to build, but
+%it's an orbital drop rocket lander. Below is a drawing of the cube and how
+%we will go about assigning the actions to each. action number is labelled
+%which will be going into where. 
+%3              4
+%|-------------|
+%|             |
+%|             |
+%|             |
+%|             | 
+%|-------------|
+%1              2
+%   into screen = -Z direction
+%   out of screen = +Z directions
+%   upwards = +Y direction 
+%   downwards = -Y direction
+%   left = -X direction
+%   right = +X direction 
+%This ensures a nice right handed coordinate system. 
 % Revised: 10-10-2019
 % Copyright 2019 The MathWorks, Inc.
+%we're also assuming that each solid rocket is producing the same amount of
+%thrust on the body. 
 
 
-
-%this properties section defines the use viewable parameters and one that
-%we will be able to change in the script because they're part of the
-%environment when it becomes initialised. 
+%these are the visible properties to the user. We will be taking their 2D
+%counterparts and making them into 3D
     properties
         % Mass of rocket (kg)
         Mass = 1;
@@ -23,7 +46,10 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         L1 = 10;
         
         % C.G. to left/right end (m)
-        L2 =  5;      
+        L2 =  5;
+        
+        % C.G to front/rear end
+        L3 = 5
         
         % Acceleration due to gravity (m/s^2)
         Gravity = 9.806
@@ -38,10 +64,10 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         Ts = 0.1
         
         % State vector
-        State = zeros(6,1)
+        State = zeros(12,1)
         
         % Last Action values
-        LastAction = zeros(2,1)
+        LastAction = zeros(4,1)
         
         % Time elapsed during simulation (sec)
         TimeCount = 0
@@ -52,7 +78,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         UseContinuousActions = true 
         
         % Log for actions and states
-        LoggedSignals = cell(2,1)
+        LoggedSignals = cell(4,1)
         
         % Flags for visualization
         VisualizeAnimation = true
@@ -84,14 +110,14 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
 %last note these are the public 
     methods
         
-        function this = SolidRocketLander(ActionInfo) % here is our constructor function
+        function this = ThreeDimSolidRocketLander(ActionInfo) % here is our constructor function
             
             % Define observation info dimension of the observation space
-            ObservationInfo(1) = rlNumericSpec([7 1 1]);
+            ObservationInfo(1) = rlNumericSpec([12 1 1]);
             ObservationInfo(1).Name = 'states';
             
             % Define action info dimension of the action space
-            ActionInfo(1) = rlNumericSpec([2 1 1]);
+            ActionInfo(1) = rlNumericSpec([4 1 1]);
             ActionInfo(1).Name = 'angles';
             
             % Create environment
@@ -99,9 +125,9 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             
             % Update action info and initialize states and logs
             updateActionInfo(this);
-            this.State = [0 this.L1 0 0 0 0]';
+            this.State = [0 this.L1 0 0 0 0 0 0 0 0 0 0]';
             this.LoggedSignals{1} = this.State;
-            this.LoggedSignals{2} = [0 0]';
+            this.LoggedSignals{2} = [0 0 0 0]';
             
         end
         
@@ -114,7 +140,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         end
         
         function set.State(this,state)
-            validateattributes(state,{'numeric'},{'finite','real','vector','numel',6},'','State');
+            validateattributes(state,{'numeric'},{'finite','real','vector','numel',12},'','State');
             this.State = state(:);
             notifyEnvUpdated(this);
         end
@@ -134,13 +160,18 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             this.L2 = val;
         end
         
+        function set.L3(this,val)
+            validateattributes(val,{'numeric'},{'finite','real','positive','scalar'},'','L3');
+            this.L3 = val;
+        end
+        
         function set.Thrust(this,val)
             validateattributes(val,{'numeric'},{'finite','real','positive','scalar'},'','Thrust');
             this.Thrust = val;
         end
         
         function set.Angle(this,val)
-            validateattributes(val,{'numeric'},{'finite','real','vector','numel',2},'','Angle');
+            validateattributes(val,{'numeric'},{'finite','real','vector','numel',4},'','Angle');
             this.Angle = sort(val);
         end
         
@@ -170,13 +201,9 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             this.VisualizeStates = false;
         end
         
-        %this is the function which will perform the step. In the grid
-        %world, our step is literally a step from one block to another, but
-        %here, we are interating with our environment as time passes. It is
-        %in essence the same way we go about solving differential
-        %equations. Note that because we have changed the way this agent
-        %interacts with the environment, its reard function which minimizes
-        %the reward no longer functions in the correct way. 
+        %so this right here is our step function is is what's taking in the
+        %actions and the physical paramaters and stepping forwards in time
+        %to obtain results of a new state. 
         function [nextobs,reward,isdone,loggedSignals] = step(this,Action)
             
             loggedSignals = [];
@@ -326,10 +353,16 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         % I     = Moment of inertia of the rocket (kg-m^2)
         % x     = x coordinate of rocket's center of mass (m)
         % y     = y coordinate of rocket's center of mass (m)
+        % z     = Z coordinate of rocket's center of mass (m) 
         % t     = angle of the rocket w.r.t. y-axis (rad, counterclockwise positive)
+        % p     = angle of the rocket w.r.t. x axis (rad, counterclockwise positive)
+        % r     = angle of the rocket w.r.t. z-axis (rad, counterclockwise positive)
         % dx    = x velocity of rocket's center of mass (m/s)
         % dy    = y velocity of rocket's center of mass (m/s)
+        % dz    = z velocity of rocket's center of mass (m/s)
         % dt    = angular velocity of rocket (rad/s)
+        % dp    = angular velocity of rocket (rad/s)
+        % dr    = angular velocity of rocket (rad/s)
         % k     = Ground stiffness coefficient (N/m)
         % c     = Ground damping coefficient (N/m/s)
         % T1,T2 = Thrust values (N)
@@ -346,29 +379,18 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         %       (I + m*L1^2)*ddx = Fx*L1^2 - Mz*L1   (rolling disc)
         %       m*ddy + k*(y-L1) + c*dy = Fy - m*g
         %       L1*ddt = -ddx
-        %
+        
             
-        %now why does it have max min here hmmmmmm...Uncertain as to why
-        %this is here. Anyway the good thing is we do not require too much
-        %modification of this I think I will comment out this perplexing
-        %line anyways. 
-            %action = max(this.Thrust(1),min(this.Thrust(2),action));
-            
-            %okay so parden my with this intense block of text, but it's a
-            %bit necessary because the sin and cos might be a little
-            %confusing below. There are three different angles being used
-            %and two of them are contained in the action. The angle of the
-            %left hand rocket relative to the body and the angle of the
-            %right hand rocket relative to the body. We also have the angle
-            %of the body(called theta here) relative to the y axis. We will
-            %need to make some edits to the body dynamics calculations to
-            %account for this change. 
-            
-            %so looks like this is the total force downwards vs the total
-            %force inducing a rotation in the body.
+        %so we now need to get into all the forces on this body, they
+           %will increase a lot now that we're in 3 dimensions.
            
-            Tfwd   = this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
-            Ttwist = this.Thrust.*sind(action(2)) - this.Thrust.*sind(action(1));
+           %
+            Tupdwards   =   this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
+            Tforwards   =   this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
+            Trightwards = this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));            
+            Ttheta = this.Thrust.*sind(action(2)) - this.Thrust.*sind(action(1));
+            Tphi = this.Thrust.*sind(action(2)) - this.Thrust.*sind(action(1));
+            Trho = this.Thrust.*sind(action(2)) - this.Thrust.*sind(action(1));
             
             %these are the parameters which we've talked about before. They
             %can be interfaced by the user. We will be playing with these
