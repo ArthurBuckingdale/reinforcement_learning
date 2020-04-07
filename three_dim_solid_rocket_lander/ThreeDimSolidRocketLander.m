@@ -15,8 +15,6 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
 %it's an orbital drop rocket lander. Below is a drawing of the cube and how
 %we will go about assigning the actions to each. action number is labelled
 %which will be going into where. 
-
-%we are looking a this object from the top down. 
 %3              4
 %|-------------|
 %|             |
@@ -25,13 +23,12 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
 %|             | 
 %|-------------|
 %1              2
-%   into screen = -Z direction 
-%   out of screen = +Z directions (upward thrust) we're looking down on
-%       this object
-%   upwards = +Y direction  (forwards thrust)
+%   into screen = -Z direction
+%   out of screen = +Z directions
+%   upwards = +Y direction 
 %   downwards = -Y direction
 %   left = -X direction
-%   right = +X direction  (rightwards force)
+%   right = +X direction 
 %This ensures a nice right handed coordinate system. 
 % Revised: 10-10-2019
 % Copyright 2019 The MathWorks, Inc.
@@ -391,19 +388,13 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
            %induce a certain amount of roll to strafe for example. A
            %certain amount of tilt to move forwards.
            
-            Tupdwards   =   this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1))...
-                this.Thrust.*cosd(action(4)) + this.Thrust.*cosd(action(3));    % all upward thrust
-            %now we need all the rotations induced by the thrust. see the diagram at the top to reference 
-            %what is going on here.
-            %tilt about the y axis 
-            Ttheta = this.Thrust.*sind(action(1))+this.Thrust.*sind(action(3))...
-                - this.Thrust.*sind(action(2)) - this.Thrust.*sind(action(4));  %%[1 3; 2 4 ]
-            
-            %rotation about z axis(wtf causes this is a drone) this is yaw
+           %
+            Tupdwards   =   this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
+            Tforwards   =   this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
+            Trightwards = this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));            
+            Ttheta = this.Thrust.*sind(action(2)) - this.Thrust.*sind(action(1));
             Tphi = this.Thrust.*sind(action(2)) - this.Thrust.*sind(action(1));
-            %tilt about the x axis 
-            Trho = this.Thrust.*sind(action(2)) + this.Thrust.*sind(action(1))...
-                -this.Thrust.*sind(action(3)) - this.Thrust.*sind(action(4));
+            Trho = this.Thrust.*sind(action(2)) - this.Thrust.*sind(action(1));
             
             %these are the parameters which we've talked about before. They
             %can be interfaced by the user. We will be playing with these
