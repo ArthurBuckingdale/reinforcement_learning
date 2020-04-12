@@ -12,3 +12,7 @@ we can find the limits of an RL agent. These are the questions that would be int
 4. What happens id we have centers of mass which are very high? will the RL agent be able to compensate for this?
 
 All quesetions that will help define some limits of our agents and indicate when more training is required.
+
+On top of this, one other modification to the action is made. We know that solid rocket boosters must remain on after being ignited, and we can start them at any point we want on the descent.
+This can accomodate for more time to adjust the force dealing with the rolling and not to accelerate the body upwards again if the mass is low, I think that i've had 
+this problem at one point. 
