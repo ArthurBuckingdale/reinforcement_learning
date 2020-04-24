@@ -5,7 +5,8 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
     % will remain constant for the duration of the event. What will change
     % however is their angle relative to the ground. This ofcourse will allow
     %thrust to be downwards or outwards controlling its yaw speed and vertical
-    %speed.
+    %speed. Note that a living penalty has been added. I'm implementing
+    %this to allow the
     %
     % Revised: 10-10-2019
     % Copyright 2019 The MathWorks, Inc.
@@ -29,10 +30,10 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         Gravity = 9.806
         
         % Bounds on thrust (N)
-        Thrust = 10
+        Thrust = 9
         
         % Bounds on angles [degrees]
-        Angle = [0 90]
+        Angle = [0 45]
         
         % Sample time (s)
         Ts = 0.1
@@ -41,7 +42,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         State = zeros(6,1)
         
         % Last Action values
-        LastAction = zeros(3,1)
+        LastAction = zeros(2,1)
         
         % Time elapsed during simulation (sec)
         TimeCount = 0
@@ -91,7 +92,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             ObservationInfo(1).Name = 'states';
             
             % Define action info dimension of the action space
-            ActionInfo(1) = rlNumericSpec([3 1]);
+            ActionInfo(1) = rlNumericSpec([2 1]);
             ActionInfo(1).Name = 'angles';
             
             % Create environment
@@ -101,7 +102,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             updateActionInfo(this);
             this.State = [0 this.L1 0 0 0 0]';
             this.LoggedSignals{1} = this.State;
-            this.LoggedSignals{2} = [0 0 0]';
+            this.LoggedSignals{2} = [0 0]';
             
         end
         
@@ -186,15 +187,15 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             %            disp(this.LastAction)
             %            disp('^^^^^^^^^^^^^^^^^')
             % Scale up the actions
-            action = Action(1:2) .* this.Angle(2);
-            
-            if Action(3)>0.5
-                Action(3)=1;
-                action(3)=1;
-            else
-                Action(3)=0;
-                action(3)=0;
-            end
+            action = Action.* this.Angle(2);
+            %
+            %             if Action(3)>0
+            %                 Action(3)=1;
+            %                 action(3)=1;
+            %             else
+            %                 Action(3)=0;
+            %                 action(3)=0;
+            %             end
             
             
             % Trapezoidal integration
@@ -220,18 +221,21 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             bounds = [100 120-this.L1 pi 60 60 pi/2];  % bounds on the state-space
             isOutOfBounds = any(abs(x) > bounds(:));
             collision = y_ <= 0;
-            roughCollision = collision && (dy_ < -0.5 || abs(dx_) > 0.5);
-            softCollision = collision && (dy_ >= -0.5 && abs(dx_) <= 0.5);
+            roughCollision = collision && (dy_ < -1.0 || abs(dx_) > 0.5);
+            softCollision = collision && (dy_ >= -1.0 && abs(dx_) <= 1.0);
             
             % Reward shaping
             distance = sqrt(x_^2 + y_^2) / sqrt(100^2+120^2);
             speed = sqrt(dx_^2 + dy_^2) / sqrt(60^2+60^2);
-            s1 = 1 - 0.5 * (sqrt(distance) + sqrt(speed));
+            s1 = 1 - (sqrt(distance) + sqrt(speed));
             s2 = 0.5 * exp(-t_^2./0.05);
             shaping = s1+s2;
             reward = shaping;
             %reward = reward + 0.05 * (1 - sum(Action)/2);
             reward = reward + 10000 * softCollision;
+            %             reward = reward - 0.5;
+            
+            
             
             % Set the states and last action
             this.State = x;
@@ -260,15 +264,15 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             % Terminate
             isdone = isOutOfBounds || collision;
             
-%             disp('-------------------')
-%             disp(nextobs)
-%             disp('----')
-%             disp(reward)
-%             disp('----')
-%             disp(isdone)
-%             disp('----')
-%             disp(loggedSignals)
-%             disp('^^^^^^^^^^^^^^^^^')
+            %             disp('-------------------')
+            %             disp(nextobs)
+            %             disp('----')
+            %             disp(reward)
+            %             disp('----')
+            %             disp(isdone)
+            %             disp('----')
+            %             disp(loggedSignals)
+            %             disp('^^^^^^^^^^^^^^^^^')
             %loggedSignals=
         end
         
@@ -283,16 +287,16 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             x = [x0; y0; t0; 0; 0; 0];
             
             % Optional: reset to specific state
-            hardReset = true;
+            hardReset = false;
             if hardReset
-                x = [10;100;-45*pi/180;0;0;0;];  % Set the desired initial values here
+                x = [0;100;0*pi/180;0;0;0;];  % Set the desired initial values here
             end
             
             this.State = x;
             obs = [x; 0];
             this.TimeCount = 0;
             this.LoggedSignals{1} = this.State;
-            this.LoggedSignals{2} = [0 0 0]';
+            this.LoggedSignals{2} = [0 0]';
             
             %reset(this.Visualizer);
             
@@ -319,7 +323,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             LL = 0;
             UL = 1;
             if this.UseContinuousActions
-                this.ActionInfo(1) = rlNumericSpec([3 1 1],'LowerLimit',LL,'UpperLimit',UL);
+                this.ActionInfo(1) = rlNumericSpec([2 1 1],'LowerLimit',LL,'UpperLimit',UL);
             else
                 ML = (UL - LL)/2 + LL;
                 els = {...
@@ -391,13 +395,22 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             
             %so looks like this is the total force downwards vs the total
             %force inducing a rotation in the body.
-            if action(3) == 1 || this.LastAction(3) == 1
-                Tfwd   = this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
-                Ttwist = this.Thrust.*sind(action(2)) - this.Thrust.*sind(action(1));
-            else
-                Tfwd = 0;
-                Ttwist = 0;
-            end
+            %if action(3) == 1 || this.LastAction(3) == 1
+            
+            
+            %so i've basically been training this guy with the wrong input
+            %physics for about two weeks. The lesson here is not to jump
+            %the gun. let's be clear on that kids. 
+            Tfwd   = this.Thrust.*cosd(action(2)-45) + this.Thrust.*cosd(action(1)-45);
+            Ttwist = this.Thrust.*sind(action(2)-45).^2 - this.Thrust.*sind(action(1)-45).^2;
+            Ttwist2= this.Thrust.*cosd(action(2)-45).^2 - this.Thrust.*cosd(action(1)-45).^2;
+            
+            
+            
+            %             else
+            %                 Tfwd = 0;
+            %                 Ttwist = 0;
+            %             end
             
             %these are the parameters which we've talked about before. They
             %can be interfaced by the user. We will be playing with these
@@ -430,12 +443,12 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             %in this calculation.
             Fx = -sin(t_) * Tfwd;
             Fy =  cos(t_) * Tfwd;
-            Mz =  Ttwist * L2_  ;
+            Mz =  (Ttwist2 * L2_) + (Ttwist * L1_)  ;
             
             dx = zeros(6,1);
             
             % ground penetration.
-            yhat = y_ - L1_;
+            %yhat = y_ - L1_;
             
             
             %so this is interesting, we are changing the regime as we
@@ -443,26 +456,26 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             %makes sense, but also just very interesting. I'll need to
             %observe the effects of this. It might just be there to level
             %out the rocket once its CG is below the ground level.
-            if yhat < 0
-                % "normalized" for mass
-                k = 1e2;
-                c = 1e1;
-                % treat as rolling wheel (1 DOF is lost between x and theta)
-                dx(4) = (Fx*L1_^2 - Mz*L1_)/(I + m*L1_^2);
-                dx(5) = Fy/m - g - k*yhat - c*dy_;
-                dx(6) = -dx(4,1)/L1_;
-                dx(1) = dx_;
-                dx(2) = dy_;
-                dx(3) = -dx(1,1)/L1_;
-            else
-                % treat as "falling" mass
-                dx(4) = Fx/m;
-                dx(5) = Fy/m - g;
-                dx(6) = Mz/I; %the rotational equivalent of an acceleration
-                dx(1) = dx_;
-                dx(2) = dy_;
-                dx(3) = dt_;
-            end
+            %             if yhat < 0
+            %                 % "normalized" for mass
+            %                 k = 1e2;
+            %                 c = 1e1;
+            %                 % treat as rolling wheel (1 DOF is lost between x and theta)
+            %                 dx(4) = (Fx*L1_^2 - Mz*L1_)/(I + m*L1_^2);
+            %                 dx(5) = Fy/m - g - k*yhat - c*dy_;
+            %                 dx(6) = -dx(4,1)/L1_;
+            %                 dx(1) = dx_;
+            %                 dx(2) = dy_;
+            %                 dx(3) = -dx(1,1)/L1_;
+            %             else
+            % treat as "falling" mass
+            dx(4) = Fx/m;
+            dx(5) = Fy/m - g;
+            dx(6) = Mz/I; %the rotational equivalent of an acceleration
+            dx(1) = dx_;
+            dx(2) = dy_;
+            dx(3) = dt_;
+            %end
             
         end
         

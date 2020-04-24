@@ -1,19 +1,10 @@
-%the purpose of this script is to modify the rocket landing example which
-%has been provided by MATLAB. In their example, they have a pair of rockets
-%which have vairable thrust to land a body on the ground from some height.
-%The goal for me is to change the dynamics of this. I am going to assume
-%that we have a solid rocket. This implies that we cannot change the thrust
-%we produce. What istead will change is the angle the thrust is relative to
-%the ground. Liquid fuel rockets are complicated and require lots of
-%engineering. Solid rockets however are much easier to design and are
-%cheap. Eventually, we will also play around with the moments of inertia
-%and the centers of gravity to see the effect that poor engineering has on
-%out ability to land a rocket. We can also have our solid rockets run out
-%of fuel after a certain amount of time has passed to ensure that it's not
-%performing silly landing manoeuvers(ideally we don't want it to sit on the
-%ground with its rockets pointing 90 degrees from vertical if the package
-%does not need all the fuel(this corresponds to using its fuel higher up and
-%bringing the object in slower so it can consume all the fuel.
+
+%the purpose of this script is to implement an A3C algorithm for training
+%the 2D rocket lander. I was irresponsible and deleted the PPO in favor of
+%a deterministic one and I could not obtain convergence. I'm moving back to
+%a stochastic approach in the form of A3C(Asynchronus advantage action-cirtic).
+%It will become asynchronus when we enable parallel training of the
+%network.
 
 close all
 clear all
@@ -42,95 +33,113 @@ numObs = observationInfo.Dimension(1);
 %numAct = numel(actionInfo.Elements);
 
 
-%% the non trivial part. Modifying the RocketLander class
-%up till now, we've just copied code from the MATLAB example and added some
-%additional commentary for context and hopefully better understanding. We
-%now however need to make the less trivial changes to this RocketLander
-%class. I've created a SolidRocketLander class which is a copy of the
-%MATLAB one, but we are going to change the parameters that we require to
-%have constant thrust output from the boosters, but change the angle
-%relative to the ground where they're producing thrust in order to see what
-%happens. Taking a look at the class, we can see the properties. This is
-%where we will make edits to the non RL parameters.
-%also cool sidebar it looks like this thing is actually computing integrals
-%from the force parameters. there is no cheating here and we're actually
-%evaluating the dynamics of the body. This is cool as all hell.
-
-%the physical parameters of the situation:
-%these can be seen by the user as designed in the class. The properties
-%section of the class defines what the user can see.
+%% editing the lander parameters
+%this is the pysical parameters of the class and the environment, we'll play
+%around with these after training in order to see how the agent reacts.
 
 env.Mass=1; %mass [kg]
 env.L1=10; %center of gravity top/bottom [m]
 env.L2=5;% center of gravity left/right [m]
 env.Gravity=9.806; %gravitational acceleration [m/s^2]
 %env.Thrust=10; %thrust of our solid rocket [N]
-env.Ts=0.10; %sample time [s] the amount that we step by
-env.State=[10;10;10;1;1;1]; %state vector [m;m;m;m/s;m/s;m/s]
-env.LastAction=[0;0;0];
+env.Ts=0.05; %sample time [s] the amount that we step by
+%env.State=[10;10;10;1;1;1]; %state vector [m;m;m;m/s;m/s;m/s]
+env.LastAction=[0;0];
 env.TimeCount=0; %time since event start [s]
 
 validateEnvironment(env)
 
 %% create the RL agent: 1. critic network
-L=100;
-K=200;
-observationPath = [
-    imageInputLayer([7 1 1],'Normalization','none','Name','observation')
-    fullyConnectedLayer(K,'Name','CriticObsFC1')
-    reluLayer('Name','CriticRelu1')
-    fullyConnectedLayer(K,'Name','CriticObsFC2')
-     reluLayer('Name','CriticRelu2')
-    fullyConnectedLayer(K,'Name','CriticObsFC3')
-     reluLayer('Name','CriticRelu3')
-    fullyConnectedLayer(L,'Name','CriticObsFC4')];
-actionPath = [
-    imageInputLayer([3 1 1],'Normalization','none','Name','action')
-    fullyConnectedLayer(K,'Name','CriticActFC1')
-    reluLayer('Name','CriticRelu5')
-    fullyConnectedLayer(K,'Name','CriticObsFC0')
-    reluLayer('Name','CriticRelu6')
-    fullyConnectedLayer(K,'Name','CriticObsFC9')
-    reluLayer('Name','CriticRelu7')
-    fullyConnectedLayer(L,'Name','CriticObsFC8')];
-commonPath = [
-    additionLayer(2,'Name','add')
-    reluLayer('Name','CriticCommonRelu')
-    fullyConnectedLayer(1,'Name','output')];
-criticNetwork = layerGraph(observationPath);
-criticNetwork = addLayers(criticNetwork,actionPath);
-criticNetwork = addLayers(criticNetwork,commonPath);    
-criticNetwork = connectLayers(criticNetwork,'CriticObsFC4','add/in1');
-criticNetwork = connectLayers(criticNetwork,'CriticObsFC8','add/in2');
+% so this type of RL agent uses a value representation and not a Q-value.
+% It will take the state only to estimate future rewards.
 
-figure 
-plot(criticNetwork)
+layer_size=[200 300];
+criticNetwork = [
+    imageInputLayer([7 1 1],'Normalization','none','Name','state')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC')
+    leakyReluLayer('Name','leaky1')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC2')
+    leakyReluLayer('Name','leaky2')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC3')
+    leakyReluLayer('Name','leaky3')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC4')
+    leakyReluLayer('Name','leaky4')
+    fullyConnectedLayer(layer_size(1),'Name','CriticFC5')
+    leakyReluLayer('Name','leaky5')
+    fullyConnectedLayer(1,'Name','CriticFC6')];
+% action_input = [
+%     imageInputLayer([2 1 1],'Normalization','none','Name','action')
+%     fullyConnectedLayer(layer_size(2),'Name','CriticAFC')
+%     leakyReluLayer('Name','leaky11')
+%     fullyConnectedLayer(layer_size(1),'Name','CriticAFC2')];
+% 
+% comPath = [additionLayer(2,'Name','add') fullyConnectedLayer(1,'Name','output')];
+% 
+% net = addLayers(layerGraph(criticNetwork),action_input);
+% net = addLayers(net,comPath);
+% 
+% net = connectLayers(net,'CriticFC6','add/in1');
+% net = connectLayers(net,'CriticAFC2','add/in2');
+% 
+% figure
+% plot(net)
+% 
+% set some options for the critic
+criticOpts = rlRepresentationOptions('LearnRate',0.05e-3,'UseDevice','gpu');
 
-criticOptions = rlRepresentationOptions('LearnRate',1e-3,'GradientThreshold',100,'L2RegularizationFactor',1e-4);
-critic1 = rlQValueRepresentation(criticNetwork,observationInfo,actionInfo,...
-    'Observation',{'observation'},'Action',{'action'},criticOptions);
-critic2 = rlQValueRepresentation(criticNetwork,observationInfo,actionInfo,...
-    'Observation',{'observation'},'Action',{'action'},criticOptions);
+% create the critic
+critic = rlValueRepresentation(criticNetwork,observationInfo,'Observation',{'state'},criticOpts);
+
+
 %% create the RL agent: 2. actor network
-actorNetwork = [
-    imageInputLayer([7 1 1],'Normalization','none','Name','observation')
-    fullyConnectedLayer(K,'Name','fc1')
-    reluLayer('Name','relu1')
-    fullyConnectedLayer(K,'Name','fc2')
-    reluLayer('Name','relu2')
-    fullyConnectedLayer(K,'Name','fc3')
-    reluLayer('Name','relu3')
-    fullyConnectedLayer(K,'Name','fc4')
-    reluLayer('Name','relu8')
-    fullyConnectedLayer(L,'Name','fc5')
-    reluLayer('Name','relu7')
-    fullyConnectedLayer(3,'Name','fc6')
-    tanhLayer('Name','tanh1')
-    ];
+%for this our actor is stochastic. This means it will determine a mean and
+%standard deviation for each action possible. We will therefore have
+%splitting branches for our
 
-actorOptions = rlRepresentationOptions('LearnRate',0.5e-3,'GradientThreshold',100,'L2RegularizationFactor',1e-4);
-actor = rlDeterministicActorRepresentation(actorNetwork,observationInfo,actionInfo,...
-    'Observation',{'observation'},'Action',{'tanh1'},actorOptions);
+% observation path layers (6 by 1 input and a 2 by 1 output)
+inPath = [ imageInputLayer([7 1 1], 'Normalization','none','Name','myobs')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC1')
+    leakyReluLayer('Name','leaky1')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC2')
+    leakyReluLayer('Name','leaky2')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC3')
+    leakyReluLayer('Name','leaky3')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC5')
+    leakyReluLayer('Name','leaky4')
+    fullyConnectedLayer(layer_size(1),'Name','actorFC4')
+    leakyReluLayer('Name','leaky5')
+    fullyConnectedLayer(2,'Name','infc')];
+
+% path layers for mean value (2 by 1 input and 2 by 1 output)
+% using scalingLayer to scale the range
+meanPath = [ tanhLayer('Name','tanh');
+    scalingLayer('Name','scale','Scale',actionInfo.UpperLimit) ];
+
+% path layers for variance (2 by 1 input and output)
+% using softplus layer to make it non negative)
+variancePath =  softplusLayer('Name', 'splus');
+
+% conctatenate two inputs (along dimension #3) to form a single (4 by 1) output layer
+outLayer = concatenationLayer(3,2,'Name','gaussPars');
+
+% add layers to network object
+net = layerGraph(inPath);
+net = addLayers(net,meanPath);
+net = addLayers(net,variancePath);
+net = addLayers(net,outLayer);
+
+% connect layers
+net = connectLayers(net,'infc','tanh/in');              % connect output of inPath to meanPath input
+net = connectLayers(net,'infc','splus/in');             % connect output of inPath to variancePath input
+net = connectLayers(net,'scale','gaussPars/in1');       % connect output of meanPath to gaussPars input #1
+net = connectLayers(net,'splus','gaussPars/in2');       % connect output of variancePath to gaussPars input #2
+
+plot(net)
+
+actorOpts = rlRepresentationOptions('LearnRate',0.05e-3,'UseDevice','gpu');
+actor = rlStochasticActorRepresentation(net,observationInfo,actionInfo,...
+    'Observation',{'myobs'},actorOpts);
+
 %% create the RL agent: 3. agent options.
 %we now need to create the agent options itself. If i'm undestanding this
 %correctly, what the agent can do is defined in the environement. We need
@@ -151,19 +160,18 @@ actor = rlDeterministicActorRepresentation(actorNetwork,observationInfo,actionIn
 %       lower we get less reward from previous steps, i need to watch this
 %       video again as well it seems.
 
-%pool = parpool(8);
+delete(gcp)
+pool = parpool(8);
 
 
-agentOptions = rlTD3AgentOptions(...
-    'SampleTime',env.Ts,...
-    'TargetSmoothFactor',1e-4,...
-    'ExperienceBufferLength',10000,...
-    'DiscountFactor',0.9995,...
-    'MiniBatchSize',64,...
-    'NumStepsToLookAhead',2000);
-% agentOptions.NoiseOptions.Variance = 0.6;
-% agentOptions.NoiseOptions.VarianceDecayRate = 1e-5;
-agent = rlTD3Agent(actor,[critic1 critic2],agentOptions);
+agentOptions = rlPPOAgentOptions(...
+    'AdvantageEstimateMethod', 'GAE', ...
+    'ClipFactor', 0.1, 'MiniBatchSize',256,...
+    'NumEpoch',20,'DiscountFactor',0.9995,...
+    'EntropyLossWeight',0.02,...
+    'SampleTime',env.Ts);
+agent = rlPPOAgent(actor,critic,agentOptions);
+
 %% configure training options and train.
 %we now just need to configure the options for the training of the agent.
 %These are for training specifically.
@@ -171,7 +179,7 @@ agent = rlTD3Agent(actor,[critic1 critic2],agentOptions);
 
 
 trainOpts = rlTrainingOptions(...
-    'MaxEpisodes',20000,...
+    'MaxEpisodes',30000,...
     'MaxStepsPerEpisode',2000,...
     'Verbose',false,...
     'Plots','training-progress',...
@@ -180,28 +188,148 @@ trainOpts = rlTrainingOptions(...
     'ScoreAveragingWindowLength',100,...
     'SaveAgentCriteria',"EpisodeReward",...
     'SaveAgentValue',11000, ...
-    'UseParallel',false);
-%trainOpts.ParallelizationOptions.StepsUntilDataIsSent=200;
-%trainOpts.ParallelizationOptions.Mode='async';
+    'UseParallel',true);
+trainOpts.ParallelizationOptions.StepsUntilDataIsSent=1999;
+trainOpts.ParallelizationOptions.Mode='async';
+trainOpts.ParallelizationOptions.DataToSendFromWorkers='Experiences';
+
 
 trainingStats = train(agent,env,trainOpts);
+%% second instance of training for longer duration rewards
+%this is some testing for me. I'm trying to figure out the steps util data
+%sent and imporving it all
 
+% trainOpts = rlTrainingOptions(...
+%     'MaxEpisodes',8000,...
+%     'MaxStepsPerEpisode',3000,...
+%     'Verbose',false,...
+%     'Plots','training-progress',...
+%     'StopTrainingCriteria','AverageReward',...
+%     'StopTrainingValue',10000,...
+%     'ScoreAveragingWindowLength',100,...
+%     'SaveAgentCriteria',"EpisodeReward",...
+%     'SaveAgentValue',11000, ...
+%     'UseParallel',true);
+% trainOpts.ParallelizationOptions.StepsUntilDataIsSent=2999;
+% trainOpts.ParallelizationOptions.Mode='async';
+% trainOpts.ParallelizationOptions.DataToSendFromWorkers='Experiences';
+% 
+% 
+% trainingStats2 = train(agent,env,trainOpts);
+%
+% %% third instance extremely long term training
+% %we now must push on to long term training and update steps until data sent
+% %again
+%
+% trainOpts = rlTrainingOptions(...
+%     'MaxEpisodes',20000,...
+%     'MaxStepsPerEpisode',1000,...
+%     'Verbose',false,...
+%     'Plots','training-progress',...
+%     'StopTrainingCriteria','AverageReward',...
+%     'StopTrainingValue',10000,...
+%     'ScoreAveragingWindowLength',100,...
+%     'SaveAgentCriteria',"EpisodeReward",...
+%     'SaveAgentValue',11000, ...
+%     'UseParallel',true);
+% trainOpts.ParallelizationOptions.StepsUntilDataIsSent=999;
+% trainOpts.ParallelizationOptions.Mode='sync';
+% trainOpts.ParallelizationOptions.DataToSendFromWorkers='Experiences';
+%
+%
+% trainingStats3 = train(agent,env,trainOpts);
+%
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+% %% more deep training
+%
+% trainOpts = rlTrainingOptions(...
+%     'MaxEpisodes',5000,...
+%     'MaxStepsPerEpisode',3000,...
+%     'Verbose',false,...
+%     'Plots','training-progress',...
+%     'StopTrainingCriteria','AverageSteps',...
+%     'StopTrainingValue',1600,...
+%     'ScoreAveragingWindowLength',100,...
+%     'SaveAgentCriteria',"EpisodeReward",...
+%     'SaveAgentValue',11000, ...
+%     'UseParallel',true);
+% trainOpts.ParallelizationOptions.StepsUntilDataIsSent=1600;
+% trainOpts.ParallelizationOptions.Mode='sync';
+% trainOpts.ParallelizationOptions.DataToSendFromWorkers='Experiences';
+%
+%
+% trainingStats4 = train(agent,env,trainOpts);
+%
+% %
+% %
+% %% longer training here
+% %so, we are iteratively increasing the maximum average steps since the RL
+% %agent has different things to learn at the beginning than the end. We can
+% %shape this with varying the stepsUntilDataIsSent parameter.
+%
+% trainOpts = rlTrainingOptions(...
+%     'MaxEpisodes',4000,...
+%     'MaxStepsPerEpisode',3000,...
+%     'Verbose',false,...
+%     'Plots','training-progress',...
+%     'StopTrainingCriteria','AverageSteps',...
+%     'StopTrainingValue',2000,...
+%     'ScoreAveragingWindowLength',100,...
+%     'SaveAgentCriteria',"EpisodeReward",...
+%     'SaveAgentValue',11000, ...
+%     'UseParallel',true);
+% trainOpts.ParallelizationOptions.StepsUntilDataIsSent=2000;
+% trainOpts.ParallelizationOptions.Mode='sync';
+% trainOpts.ParallelizationOptions.DataToSendFromWorkers='Experiences';
+%
+%
+% trainingStats5 = train(agent,env,trainOpts);
+%
+%
+%
+% %% synchronus.
+% %by this point we should have a well converging solution and we can average
+% %the results from each worker to push to the 10000 benchmark.
+%
+%
+% trainOpts = rlTrainingOptions(...
+%     'MaxEpisodes',5000,...
+%     'MaxStepsPerEpisode',3000,...
+%     'Verbose',false,...
+%     'Plots','training-progress',...
+%     'StopTrainingCriteria','AverageSteps',...
+%     'StopTrainingValue',2800,...
+%     'ScoreAveragingWindowLength',100,...
+%     'SaveAgentCriteria',"EpisodeReward",...
+%     'SaveAgentValue',11000, ...
+%     'UseParallel',true);
+% trainOpts.ParallelizationOptions.StepsUntilDataIsSent=2999;
+% trainOpts.ParallelizationOptions.Mode='sync';
+% trainOpts.ParallelizationOptions.DataToSendFromWorkers='Experiences';
+%
+%
+% trainingStats6 = train(agent,env,trainOpts);
+%
+% %% longer episodes still
+%
+%
+% trainOpts = rlTrainingOptions(...
+%     'MaxEpisodes',5000,...
+%     'MaxStepsPerEpisode',5000,...
+%     'Verbose',false,...
+%     'Plots','training-progress',...
+%     'StopTrainingCriteria','AverageReward',...
+%     'StopTrainingValue',10000,...
+%     'ScoreAveragingWindowLength',100,...
+%     'SaveAgentCriteria',"EpisodeReward",...
+%     'SaveAgentValue',11000, ...
+%     'UseParallel',true);
+% trainOpts.ParallelizationOptions.StepsUntilDataIsSent=4000;
+% trainOpts.ParallelizationOptions.Mode='sync';
+% trainOpts.ParallelizationOptions.DataToSendFromWorkers='Experiences';
+%
+%
+% trainingStats7 = train(agent,env,trainOpts);
 
 
 
