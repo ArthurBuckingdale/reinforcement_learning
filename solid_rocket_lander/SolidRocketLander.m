@@ -30,7 +30,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
         Gravity = 9.806
         
         % Bounds on thrust (N)
-        Thrust = 9
+        Thrust = 11
         
         % Bounds on angles [degrees]
         Angle = [0 45]
@@ -218,7 +218,7 @@ classdef SolidRocketLander < rl.env.MATLABEnvironment
             dt_ = x(6); %#ok<NASGU>
             
             % Determine conditions
-            bounds = [100 120-this.L1 pi 60 60 pi/2];  % bounds on the state-space
+            bounds = [100 120-this.L1 pi 80 80 pi];  % bounds on the state-space
             isOutOfBounds = any(abs(x) > bounds(:));
             collision = y_ <= 0;
             roughCollision = collision && (dy_ < -1.0 || abs(dx_) > 0.5);

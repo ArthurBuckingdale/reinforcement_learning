@@ -23,10 +23,10 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
     %|             |
     %|-------------|
     %1              2
-    %   into screen = -Z direction
-    %   out of screen = +Z directions
-    %   upwards = +Y direction
-    %   downwards = -Y direction
+    %   into screen = -Y direction
+    %   out of screen = +Y directions
+    %   upwards = -Z direction
+    %   downwards = +Z direction
     %   left = -X direction
     %   right = +X direction
     %This ensures a nice right handed coordinate system.
@@ -49,7 +49,7 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
     %counterparts and making them into 3D
     properties
         % Mass of rocket (kg)
-        Mass = 1;
+        Mass = 2;
         
         % C.G. to top/bottom end (m)
         L1 = 10;
@@ -67,7 +67,7 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
         Thrust = 10
         
         % Bounds on angles [degrees]
-        Angle = [0 90]
+        Angle = [0 60]
         
         % Sample time (s)
         Ts = 0.1
@@ -82,7 +82,7 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
         TimeCount = 0
         
         %the aero drag fins to remove yaw motion/stabilize
-        FinArea = 0.3; %[m^2]
+        FinArea = 0.05; %[m^2]
     end
     
     properties (Hidden)
@@ -258,20 +258,22 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             drh_ = x(12); 
             
             % Determine conditions
-            bounds = [100 120-this.L1 100 60 60 60 pi pi pi pi/2 pi/2 pi/2];  % bounds on the state-space
+            bounds = [100 120-this.L1 100 60 60 60 pi pi pi pi/2 4*pi pi/2];  % bounds on the state-space
             isOutOfBounds = any(abs(x) > bounds(:));
-            collision = y_ <= 0;
-            roughCollision = collision && (dy_ < -0.5 || abs(dx_) > 0.5 || abs(dz_) > 0.5);
-            softCollision = collision && (dy_ >= -0.5 && abs(dx_) <= 0.5 && abs(dz_) < 0.5);
+            collision = y_ <= 0.0;
+            roughCollision = collision && (dy_ < -1.0 || abs(dx_) > 0.7 || abs(dz_) > 0.7);%...
+                %|| abs(dth_) > pi/6 || abs(drh_) > pi/6);
+            softCollision = collision && (dy_ >= -1.0 && abs(dx_) <= 0.7 && abs(dz_) <= 0.7);%...
+                %&& abs(dth_) < pi/6 && abs(drh_) < pi/6);
             
             % Reward shaping
             distance = sqrt(x_^2 + y_^2 + z_^2) / sqrt(100^2+120^2+100^2);
             speed = sqrt(dx_^2 + dy_^2 + dz_^2) / sqrt(60^2+60^2+60^2);
             s1 = 1 - 0.5 * (sqrt(distance) + sqrt(speed));
-            s2 = 0.5 * exp(-th_^2./0.05) + 0.5* exp(-ph_^2./0.05) + 0.5* exp(-rh_^2./0.05);
+            s2 = 0.2 * exp(-th_^2./0.05) + 0.2* exp(-ph_^2./0.05) + 0.2* exp(-rh_^2./0.05);
             shaping = s1+s2;
             reward = shaping;
-            reward = reward + 0.05 * (1 - sum(Action)/2);
+            %reward = reward + 0.05 * (1 - sum(Action)/2);
             reward = reward + 10000 * softCollision;
             
             % Set the states and last action
@@ -435,18 +437,25 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             %certain amount of tilt to move forwards.
             
             %Tupwards
-            Tupwards   =   this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1))+...
-                this.Thrust.*cosd(action(3)) + this.Thrust.*cosd(action(4));
+            Tupwards   =   this.Thrust.*cosd(action(2)-60) + this.Thrust.*cosd(action(1)-60)+...
+                this.Thrust.*cosd(action(3)-60) + this.Thrust.*cosd(action(4)-60);
             %             Tforwards   =   this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
             %             Trightwards = this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
             %this is the left and right tilting motion
-            Ttheta = this.Thrust.*sind(action(1)) + this.Thrust.*sind(action(3))...
-                - this.Thrust.*sind(action(2)) - this.Thrust.*sind(action(4));
+            Ttheta = this.Thrust.*sind(action(1)-60).^2 + this.Thrust.*sind(action(3)-60).^2 ...
+                - this.Thrust.*sind(action(2)-60).^2 - this.Thrust.*sind(action(4)-60).^2;
+            Ttheta2 = this.Thrust.*cosd(action(1)-60).^2 + this.Thrust.*cosd(action(3)-60).^2 ...
+                - this.Thrust.*cosd(action(2)-60).^2 - this.Thrust.*cosd(action(4)-60).^2;
             %this is the yaw motion
-            Tphi = sind(action(5))*cosd(action(5))*(this.FinArea)*(1.225)*(0.8)*(x(5).^2);  %need to decide plus and minus here
+            Tphi = sind(action(5)-30)*cosd(action(5)-30)*(this.FinArea)*(1.225)*(0.8)*(x(5).^2);  %need to decide plus and minus here
             %so this it the forwards and reverse tilting action
-            Trho = this.Thrust.*sind(action(2)) + this.Thrust.*sind(action(1))...
-                - this.Thrust.*sind(action(3)) - this.Thrust.*sind(action(4));
+            Trho = this.Thrust.*sind(action(2)-60).^2 + this.Thrust.*sind(action(1)-60).^2 ...
+                - this.Thrust.*sind(action(3)-60).^2 - this.Thrust.*sind(action(4)-60).^2;
+            Trho2 = this.Thrust.*cosd(action(2)-60).^2 + this.Thrust.*cosd(action(1)-60).^2 ...
+                - this.Thrust.*cosd(action(3)-60).^2 - this.Thrust.*cosd(action(4)-60).^2;
+            
+            Tfwd=1;
+            Ttwist=1;
             
             
             %these are the parameters which we've talked about before. They
@@ -466,9 +475,9 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             % by the agent in the future. If so, re train the bastard a
             % bit. We are going to assume it behaves like a flat disc in
             % every direction.
-            I1 = 0.5*m*L1_^2;
-            I2 = 0.5*m*L2_^2;
-            I3 = 0.5*m*L3_^2;
+            I1 = 0.25*m*L1_^2; % only half of the mass is inertial
+            I2 = 0.25*m*L2_^2; % only half of the mass is inertial
+            I3 = 0.25*m*L3_^2; % only half of the mass is inertial
             
             %this is our state vector. position and velocity and theta
             x_  = x(1); %#ok<NASGU>
@@ -491,12 +500,12 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             %are giving the dimentions of the rocket lander essentially. I
             %know it is specified as a rectangle above, and yet we're using 
             %moments of inertia from a disc, but it will do for now. 
-            Fx = -sin(th_)*Tupwards; %pushing body left and right
+            Fx = -sin(th_)*(cos(ph_).^2)*Tupwards-sin(rh_)*(sin(ph_).^2)*Tupwards; %pushing body left and right
             Fy =  cos(th_)*cos(rh_)* Tupwards; %pushing the body upwards
-            Fz = -sin(rh_)*Tupwards ; %pushing body in and out of screen.
-            My =  Tphi * L2_;  %rotation about the y-axis is yawing L2 is the rocket radius
-            Mx =  Trho * L3_;              %rotation about the x-axis is the inward and outward          
-            Mz =  Ttheta * L1_;               %rotation about the z-axis is left and right   
+            Fz = -sin(rh_)*(cos(ph_).^2)*Tupwards-sin(th_)*(sin(ph_).^2)*Tupwards ; %pushing body in and out of screen.
+            My =  Tphi * sqrt(L2_.^2+L3_.^2);  %rotation about the y-axis is yawing L2 is the rocket radius.(I know this is no correct)
+            Mz =  (Trho * L3_) + (Trho2 * L1_);              %rotation about the x-axis is the inward and outward          
+            Mx =  (Ttheta * L2_) + (Ttheta2 * L1_);               %rotation about the z-axis is left and right   
             
             dx = zeros(12,1);
             
@@ -509,7 +518,7 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             dx(6) = Fz/m;  %we can maybe add some random jitters here in future
             dx(10)= Mz/I1;
             dx(11)= My/I2;
-            dx(12)= Mx/I3; 
+            dx(12)= Mx/I1; 
             dx(1) = dx_;
             dx(2) = dy_;
             dx(3) = dz_;

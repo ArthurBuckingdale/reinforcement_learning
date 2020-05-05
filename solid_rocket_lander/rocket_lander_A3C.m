@@ -85,7 +85,7 @@ criticNetwork = [
 % plot(net)
 % 
 % set some options for the critic
-criticOpts = rlRepresentationOptions('LearnRate',0.05e-3,'UseDevice','gpu');
+criticOpts = rlRepresentationOptions('LearnRate',0.1e-3,'UseDevice','gpu');
 
 % create the critic
 critic = rlValueRepresentation(criticNetwork,observationInfo,'Observation',{'state'},criticOpts);
@@ -161,7 +161,7 @@ actor = rlStochasticActorRepresentation(net,observationInfo,actionInfo,...
 %       video again as well it seems.
 
 delete(gcp)
-pool = parpool(8);
+pool = parpool(4);
 
 
 agentOptions = rlPPOAgentOptions(...
@@ -189,7 +189,7 @@ trainOpts = rlTrainingOptions(...
     'SaveAgentCriteria',"EpisodeReward",...
     'SaveAgentValue',11000, ...
     'UseParallel',true);
-trainOpts.ParallelizationOptions.StepsUntilDataIsSent=1999;
+trainOpts.ParallelizationOptions.StepsUntilDataIsSent=1000;
 trainOpts.ParallelizationOptions.Mode='async';
 trainOpts.ParallelizationOptions.DataToSendFromWorkers='Experiences';
 
