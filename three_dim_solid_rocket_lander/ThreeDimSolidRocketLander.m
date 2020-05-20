@@ -218,10 +218,13 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             this.VisualizeActions = false;
             this.VisualizeStates = false;
         end
+      
         
         %so this right here is our step function is is what's taking in the
         %actions and the physical paramaters and stepping forwards in time
         %to obtain results of a new state.
+        
+      
         function [nextobs,reward,isdone,loggedSignals] = step(this,Action)
             
             loggedSignals = [];
@@ -388,6 +391,8 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             this.ActionInfo(1).Name = 'angles';
         end
         
+        
+        
         %this is the function which is computing the dynamics. The MATLAB
         %folks have documented it very well so no extra commentary is
         %needed from me to explain this.
@@ -428,35 +433,23 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             %       m*ddy + k*(y-L1) + c*dy = Fy - m*g
             %       L1*ddt = -ddx
             
-            
-            %so we now need to get into all the forces on this body, they
-            %will increase a lot now that we're in 3 dimensions.
-            %recall that this is very similar to a quadcopter drone. We have
-            %less control directions than directions. Which means we need to
-            %induce a certain amount of roll to strafe for example. A
-            %certain amount of tilt to move forwards.
-            
-            %Tupwards
-            Tupwards   =   this.Thrust.*cosd(action(2)-60) + this.Thrust.*cosd(action(1)-60)+...
-                this.Thrust.*cosd(action(3)-60) + this.Thrust.*cosd(action(4)-60);
-            %             Tforwards   =   this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
-            %             Trightwards = this.Thrust.*cosd(action(2)) + this.Thrust.*cosd(action(1));
-            %this is the left and right tilting motion
-            Ttheta = this.Thrust.*sind(action(1)-60).^2 + this.Thrust.*sind(action(3)-60).^2 ...
-                - this.Thrust.*sind(action(2)-60).^2 - this.Thrust.*sind(action(4)-60).^2;
-            Ttheta2 = this.Thrust.*cosd(action(1)-60).^2 + this.Thrust.*cosd(action(3)-60).^2 ...
-                - this.Thrust.*cosd(action(2)-60).^2 - this.Thrust.*cosd(action(4)-60).^2;
-            %this is the yaw motion
-            Tphi = sind(action(5)-30)*cosd(action(5)-30)*(this.FinArea)*(1.225)*(0.8)*(x(5).^2);  %need to decide plus and minus here
-            %so this it the forwards and reverse tilting action
-            Trho = this.Thrust.*sind(action(2)-60).^2 + this.Thrust.*sind(action(1)-60).^2 ...
-                - this.Thrust.*sind(action(3)-60).^2 - this.Thrust.*sind(action(4)-60).^2;
-            Trho2 = this.Thrust.*cosd(action(2)-60).^2 + this.Thrust.*cosd(action(1)-60).^2 ...
-                - this.Thrust.*cosd(action(3)-60).^2 - this.Thrust.*cosd(action(4)-60).^2;
-            
             Tfwd=1;
             Ttwist=1;
+            %we are now going to calculate the force from each rocket in the
+            %frame of the body.
+            norm_factor=10/sqrt(2);
+            x_force=norm_factor*(sin(action(1))+sin(action(3))-sin(action(2))-sin(action(4)));
+            y_force=norm_factor*(sin(action(4))+sin(action(3))-sin(action(2))-sin(action(1)));
+            z_force=norm_factor*(cos(action(1))+cos(action(2))+cos(action(3))+cos(action(4)));
+            %now for the torques
+            roll_torque=norm_factor*(cos(action(1))+cos(action(3))-cos(action(2))-cos(action(4)));
+            pitch_torque=norm_factor*(cos(action(4))+cos(action(3))-cos(action(2))-cos(action(1)));
+            yaw_torque=(0.5)*(1.204)*(0.4)*(0.01*sin(action(5)))*cos(action(5))*(x(6).^2);
             
+            %get the rotation matrix and stick force into a vector
+            force=[x_force,y_force,z_force];
+            [rotation_matrix]=calculate_rot_matrix(x);
+            inertial_force=force*rotation_matrix;
             
             %these are the parameters which we've talked about before. They
             %can be interfaced by the user. We will be playing with these
@@ -475,9 +468,9 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             % by the agent in the future. If so, re train the bastard a
             % bit. We are going to assume it behaves like a flat disc in
             % every direction.
-            I1 = 0.25*m*L1_^2; % only half of the mass is inertial
-            I2 = 0.25*m*L2_^2; % only half of the mass is inertial
-            I3 = 0.25*m*L3_^2; % only half of the mass is inertial
+            I1 = 0.5*m*L1_^2;
+            I2 = 0.5*m*L2_^2; 
+            I3 = 0.5*m*L3_^2; 
             
             %this is our state vector. position and velocity and theta
             x_  = x(1); %#ok<NASGU>
@@ -500,12 +493,12 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             %are giving the dimentions of the rocket lander essentially. I
             %know it is specified as a rectangle above, and yet we're using 
             %moments of inertia from a disc, but it will do for now. 
-            Fx = -sin(th_)*(cos(ph_).^2)*Tupwards-sin(rh_)*(sin(ph_).^2)*Tupwards; %pushing body left and right
-            Fy =  cos(th_)*cos(rh_)* Tupwards; %pushing the body upwards
-            Fz = -sin(rh_)*(cos(ph_).^2)*Tupwards-sin(th_)*(sin(ph_).^2)*Tupwards ; %pushing body in and out of screen.
-            My =  Tphi * sqrt(L2_.^2+L3_.^2);  %rotation about the y-axis is yawing L2 is the rocket radius.(I know this is no correct)
-            Mz =  (Trho * L3_) + (Trho2 * L1_);              %rotation about the x-axis is the inward and outward          
-            Mx =  (Ttheta * L2_) + (Ttheta2 * L1_);               %rotation about the z-axis is left and right   
+            Fx = inertial_force(1);
+            Fy = inertial_force(2);
+            Fz = inertial_force(3);
+            My = roll_torque*this.L2;  %rotation about the y-axis is yawing L2 is the rocket radius.(I know this is no correct)
+            Mz =  yaw_torque*this.L2;%rotation about the x-axis is the inward and outward          
+            Mx =  pitch_torque*this.L3;               %rotation about the z-axis is left and right   
             
             dx = zeros(12,1);
             
@@ -514,11 +507,11 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             % for the thing, even though it's not the case
             % treat as "falling" mass
             dx(4) = Fx/m;   %add some jitters here in future. 
-            dx(5) = Fy/m - g; %gravity is in this direction
-            dx(6) = Fz/m;  %we can maybe add some random jitters here in future
-            dx(10)= Mz/I1;
-            dx(11)= My/I2;
-            dx(12)= Mx/I1; 
+            dx(5) = Fy/m; %gravity is in this direction
+            dx(6) = Fz/m-g;  %we can maybe add some random jitters here in future
+            dx(10)= Mx/I1;
+            dx(11)= My/I1;
+            dx(12)= Mz/I2; 
             dx(1) = dx_;
             dx(2) = dy_;
             dx(3) = dz_;
