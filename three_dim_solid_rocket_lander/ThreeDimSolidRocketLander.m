@@ -123,13 +123,14 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
     methods
         
         function this = ThreeDimSolidRocketLander(ActionInfo) % here is our constructor function
-            
+            LL = 0;
+            UL = 1;
             % Define observation info dimension of the observation space
             ObservationInfo(1) = rlNumericSpec([13 1 1]);
             ObservationInfo(1).Name = 'states';
             
             % Define action info dimension of the action space
-            ActionInfo(1) = rlNumericSpec([5 1 1]);
+            ActionInfo(1) = rlNumericSpec([5 1 1],'LowerLimit',LL,'UpperLimit',UL);
             ActionInfo(1).Name = 'angles';
             
             % Create environment
@@ -183,7 +184,7 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
         end
         
         function set.Angle(this,val)
-            validateattributes(val,{'numeric'},{'finite','real','vector','numel',5},'','Angle');
+            validateattributes(val,{'numeric'},{'finite','real','vector','numel',2},'','Angle');
             this.Angle = sort(val);
         end
         
@@ -238,9 +239,9 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             [dx1,~,~,action] = dynamics(this,x1, action);
             dx2 = dynamics(this,x1 + ts*dx1, action);
             x = ts/2*(dx1 + dx2) + x1;
-            x(7) = atan2(sin(x(7)),cos(x(7)));            % wrap the output angles
-            x(8) = atan2(sin(x(8)),cos(x(8)));
-            x(9) = atan2(sin(x(9)),cos(x(9)));
+%             x(7) = atan2(sin(x(7)),cos(x(7)));            % wrap the output angles
+%             x(8) = atan2(sin(x(8)),cos(x(8)));
+%             x(9) = atan2(sin(x(9)),cos(x(9)));
             
             
             % Update time count
@@ -248,32 +249,32 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             
             % Unpack states
             x_  = x(1);
-            y_  = x(2) - this.L1;
-            z_  = x(3);
+            y_  = x(2);
+            z_  = x(3)- this.L1;
             dx_ = x(4);
             dy_ = x(5);
             dz_ = x(6); 
-            th_  = x(7);
-            ph_  = x(8);
+            ph_  = x(7);
+            th_  = x(8);
             rh_  = x(9);
-            dth_ = x(10);
-            dph_ = x(11);
+            dph_ = x(10);
+            dth_ = x(11);
             drh_ = x(12); 
             
             % Determine conditions
-            bounds = [100 120-this.L1 100 60 60 60 pi pi pi pi/2 4*pi pi/2];  % bounds on the state-space
+            bounds = [100 100 120-this.L1 60 60 60 pi pi pi pi pi 2*pi];  % bounds on the state-space
             isOutOfBounds = any(abs(x) > bounds(:));
-            collision = y_ <= 0.0;
-            roughCollision = collision && (dy_ < -1.0 || abs(dx_) > 0.7 || abs(dz_) > 0.7);%...
+            collision = z_ <= 0.0;
+            roughCollision = collision && (dz_ < -1.0 || abs(dx_) > 0.7 || abs(dy_) > 0.7);%...
                 %|| abs(dth_) > pi/6 || abs(drh_) > pi/6);
-            softCollision = collision && (dy_ >= -1.0 && abs(dx_) <= 0.7 && abs(dz_) <= 0.7);%...
+            softCollision = collision && (dz_ >= -1.0 && abs(dx_) <= 0.7 && abs(dy_) <= 0.7);%...
                 %&& abs(dth_) < pi/6 && abs(drh_) < pi/6);
             
             % Reward shaping
             distance = sqrt(x_^2 + y_^2 + z_^2) / sqrt(100^2+120^2+100^2);
             speed = sqrt(dx_^2 + dy_^2 + dz_^2) / sqrt(60^2+60^2+60^2);
             s1 = 1 - 0.5 * (sqrt(distance) + sqrt(speed));
-            s2 = 0.2 * exp(-th_^2./0.05) + 0.2* exp(-ph_^2./0.05) + 0.2* exp(-rh_^2./0.05);
+            s2 = 0.3 * exp(-th_^2./0.05) + 0.3* exp(-ph_^2./0.05);
             shaping = s1+s2;
             reward = shaping;
             %reward = reward + 0.05 * (1 - sum(Action)/2);
@@ -290,11 +291,11 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             dxhat = x(4)/bounds(4);
             dyhat = x(5)/bounds(5);
             dthat = x(6)/bounds(6);
-            thhat = x(7)/bounds(7);  % Normalize to [-1,1]
-            phhat = x(8)/bounds(8);
+            phhat = x(7)/bounds(7);  % Normalize to [-1,1]
+            thhat = x(8)/bounds(8);
             rhhat = x(9)/bounds(9);
-            dthhat = x(10)/bounds(10);
-            dphhat = x(11)/bounds(11);
+            dphhat = x(10)/bounds(10);
+            dthhat = x(11)/bounds(11);
             drhhat = x(12)/bounds(12);
             %so i didn't realise this before, but the observable is not
             %just the state of the object we passed in the landing sensor
@@ -307,7 +308,7 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             if softCollision
                 landingSensor = 1;
             end
-            nextobs = [xhat; yhat; that; dxhat; dyhat; dthat; thhat; phhat; rhhat; dthhat; dphhat; drhhat; landingSensor];
+            nextobs = [xhat; yhat; that; dxhat; dyhat; dthat; phhat; thhat; rhhat; dphhat; dthhat; drhhat; landingSensor];
             
             % Log states and actions
             this.LoggedSignals(1) = {[this.LoggedSignals{1}, this.State(:)]};
@@ -322,19 +323,19 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
         %of the agent, but also its overall performance. 
         function obs = reset(this)
             x0 = 0;
-            y0 = 100;
-            z0 = 0;
+            y0 = 0;
+            z0 = 100;
             th0 = 0;
             ph0 = 0;
             rh0 = 0;
             if rand
                 x0 = -20 + 40*rand;             % vary x from [-20,+20] m
-                z0 = -20 + 40*rand;
-                th0 = pi/180 * (-45 + 90*rand);  % vary t from [-45,+45] deg
-                ph0 = pi/180 * (-45 + 90*rand);
-                rh0 = pi/180 * (-45 + 90*rand);
+                y0 = -20 + 40*rand;
+                th0 = pi/180 * (-25 + 50*rand);  % vary t from [-45,+45] deg
+                ph0 = pi/180 * (-25 + 50*rand);
+                rh0 = pi/180 * (-25 + 50*rand);
             end
-            x = [x0; y0; z0; 0; 0; 0; th0; ph0; rh0; 0; 0; 0];
+            x = [x0; y0; z0; 0; 0; 0; ph0; th0; rh0; 0; 0; 0];
             
             % Optional: reset to specific state
             hardReset = false;
@@ -371,23 +372,7 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
         function updateActionInfo(this)
             LL = 0;
             UL = 1;
-            if this.UseContinuousActions
-                this.ActionInfo(1) = rlNumericSpec([5 1 1],'LowerLimit',LL,'UpperLimit',UL);
-            else
-                ML = (UL - LL)/2 + LL;
-                els = {...
-                    [LL;LL],...  % do nothing
-                    [LL;ML],...  % fire right (med)
-                    [LL;UL],...  % fire right (max)
-                    [ML;LL],...  % fire left (med)
-                    [ML;ML],...  % fire left (med) + right (med)
-                    [ML;UL],...  % fire left (med) + right (max)
-                    [UL;LL],...  % fire left (max)
-                    [UL;ML],...  % fire left (max) + right (med)
-                    [UL;UL] ...  % fire left (max) + right (max)
-                    }';
-                this.ActionInfo = rlFiniteSetSpec(els);
-            end
+            this.ActionInfo(1) = rlNumericSpec([5 1 1],'LowerLimit',LL,'UpperLimit',UL);
             this.ActionInfo(1).Name = 'angles';
         end
         
@@ -437,20 +422,25 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             Ttwist=1;
             %we are now going to calculate the force from each rocket in the
             %frame of the body.
-            norm_factor=10/sqrt(2);
-            x_force=norm_factor*(sin(action(1))+sin(action(3))-sin(action(2))-sin(action(4)));
-            y_force=norm_factor*(sin(action(4))+sin(action(3))-sin(action(2))-sin(action(1)));
-            z_force=norm_factor*(cos(action(1))+cos(action(2))+cos(action(3))+cos(action(4)));
+            %norm_factor=this.Thrust/sqrt(2);
+            x_force=(this.Thrust/sqrt(2))*(sind(this.Angle(2)-action(1))+sind(this.Angle(2)-action(3))-sind(this.Angle(2)-action(2))-sind(this.Angle(2)-action(4)));
+            y_force=(this.Thrust/sqrt(2))*(sind(this.Angle(2)-action(4))+sind(this.Angle(2)-action(3))-sind(this.Angle(2)-action(2))-sind(this.Angle(2)-action(1)));
+            z_force=this.Thrust*(cosd(this.Angle(2)-action(1))+cosd(this.Angle(2)-action(2))+cosd(this.Angle(2)-action(3))+cosd(this.Angle(2)-action(4)));
             %now for the torques
-            roll_torque=norm_factor*(cos(action(1))+cos(action(3))-cos(action(2))-cos(action(4)));
-            pitch_torque=norm_factor*(cos(action(4))+cos(action(3))-cos(action(2))-cos(action(1)));
-            yaw_torque=(0.5)*(1.204)*(0.4)*(0.01*sin(action(5)))*cos(action(5))*(x(6).^2);
+            roll_torque=(this.Thrust/sqrt(2))*(cosd(this.Angle(2)-action(1))*this.L2+sind(this.Angle(2)-action(1))*this.L1+cosd(this.Angle(2)-action(3))*this.L2+...
+                sind(this.Angle(2)-action(3))*this.L1-cosd(this.Angle(2)-action(2))*this.L2-sind(this.Angle(2)-action(2))*this.L1-...
+                cosd(this.Angle(2)-action(4))*this.L2-sind(this.Angle(2)-action(4))*this.L2);
+            pitch_torque=(this.Thrust/sqrt(2))*(-cosd(this.Angle(2)-action(1))*this.L2-sind(this.Angle(2)-action(1))*this.L1+cosd(this.Angle(2)-action(3))*this.L2+...
+                sind(this.Angle(2)-action(3))*this.L1-cosd(this.Angle(2)-action(2))*this.L2-sind(this.Angle(2)-action(2))*this.L1+...
+                cosd(this.Angle(2)-action(4))*this.L2+sind(this.Angle(2)-action(4))*this.L2);
+            yaw_torque=(0.5)*(1.204)*(0.4)*(0.01*sind(action(5)-30))*cosd(action(5)-30)*(5.^2);
             
             %get the rotation matrix and stick force into a vector
             force=[x_force,y_force,z_force];
             [rotation_matrix]=calculate_rot_matrix(x);
-            inertial_force=force*rotation_matrix;
+            inertial_force=rotation_matrix*force';
             
+           
             %these are the parameters which we've talked about before. They
             %can be interfaced by the user. We will be playing with these
             %to checkout the effects of Jupiter gravity on our lander for
@@ -479,14 +469,19 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             dx_ = x(4);
             dy_ = x(5);
             dz_ = x(6);
-            th_ = x(7);
-            ph_ = x(8);
+            ph_ = x(7);
+            th_ = x(8);
             rh_ = x(9);
-            dth_= x(10);
-            dph_= x(11);
+            dph_= x(10);
+            dth_= x(11);
             drh_= x(12);
             
-            
+            %we need to transform the angles to the rotation vector. These
+            %will then be the new angles for the force model. 
+            omega_matrix=obtain_angular_conversion_matrix(x);
+            inv_omega_matrix=inv(omega_matrix);
+            omega_vect=inv_omega_matrix*[dph_;dth_;drh_];
+            forward_omega_vect=omega_matrix*[dph_;dth_;drh_];
             %so here are the forces and the torques being applied to this
             %body. Below, they will be transfered into accelerations by
             %dividing by mass of moments of inertia. The L1,L2,L3 values
@@ -495,28 +490,31 @@ classdef ThreeDimSolidRocketLander < rl.env.MATLABEnvironment
             %moments of inertia from a disc, but it will do for now. 
             Fx = inertial_force(1);
             Fy = inertial_force(2);
-            Fz = inertial_force(3);
-            My = roll_torque*this.L2;  %rotation about the y-axis is yawing L2 is the rocket radius.(I know this is no correct)
+            Fz = inertial_force(3);  
+            My = roll_torque;  %rotation about the y-axis is yawing L2 is the rocket radius.
             Mz =  yaw_torque*this.L2;%rotation about the x-axis is the inward and outward          
-            Mx =  pitch_torque*this.L3;               %rotation about the z-axis is left and right   
+            Mx =  pitch_torque;               %rotation about the z-axis is left and right   
             
             dx = zeros(12,1);
             
             % below are the velocities and accelerations which are caused
             % by the forces here. I'm assuming perfect rotational symmetry
-            % for the thing, even though it's not the case
+            % for the thing, even though it's not the case. In 3D we have
+            % complicated coupling equations for the rotations. I didnt has
+            % this here originally, which means the dynamics are not quite
+            % right. Hopefully this should be fixed now. 
             % treat as "falling" mass
             dx(4) = Fx/m;   %add some jitters here in future. 
             dx(5) = Fy/m; %gravity is in this direction
-            dx(6) = Fz/m-g;  %we can maybe add some random jitters here in future
-            dx(10)= Mx/I1;
-            dx(11)= My/I1;
-            dx(12)= Mz/I2; 
+            dx(6) = (Fz/m)-g;  %we can maybe add some random jitters here in future
+            dx(10)= Mx/I1-(((I1-I2)./I1).*(forward_omega_vect(2).*forward_omega_vect(3)));
+            dx(11)= My/I1-(((I2-I1)./I1).*(forward_omega_vect(1).*forward_omega_vect(3)));
+            dx(12)= Mz/I2-(((I1-I1)./I2).*(forward_omega_vect(1).*forward_omega_vect(2))); 
             dx(1) = dx_;
             dx(2) = dy_;
             dx(3) = dz_;
-            dx(7) = dth_;
-            dx(8) = dph_;
+            dx(7) = dph_;
+            dx(8) = dth_;
             dx(9) = drh_;
            
         end

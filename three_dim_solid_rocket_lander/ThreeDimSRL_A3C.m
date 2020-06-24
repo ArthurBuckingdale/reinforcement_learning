@@ -30,7 +30,7 @@ env.L1=10; %center of gravity top/bottom [m]
 env.L2=5;% center of gravity left/right [m]
 env.L3=5; %center of gravity for inwards/outwards
 env.Gravity=9.806; %gravitational acceleration [m/s^2]
-env.Thrust=10; %thrust of our solid rocket [N]
+env.Thrust=20; %thrust of our solid rocket [N]
 env.Ts=0.05; %sample time [s] the amount that we step by
 %env.State=[10;10;10;1;1;1]; %state vector [m;m;m;m/s;m/s;m/s]
 %env.LastAction=[0;0];
@@ -45,20 +45,34 @@ validateEnvironment(env)
 layer_size=[400 600];
 criticNetwork = [
     imageInputLayer([numObs 1 1],'Normalization','none','Name','state')
-    fullyConnectedLayer(layer_size(2),'Name','CriticFC')
-    leakyReluLayer('Name','leaky1')
-    fullyConnectedLayer(layer_size(2),'Name','CriticFC2')
-    leakyReluLayer('Name','leaky2')
-    fullyConnectedLayer(layer_size(2),'Name','CriticFC3')
-    leakyReluLayer('Name','leaky3')
-    fullyConnectedLayer(layer_size(2),'Name','CriticFC4')
-    leakyReluLayer('Name','leaky4')
-    fullyConnectedLayer(layer_size(2),'Name','CriticFC5')
-    leakyReluLayer('Name','leaky5')
-    fullyConnectedLayer(layer_size(2),'Name','CriticFC6')
-    leakyReluLayer('Name','leaky6')
-    fullyConnectedLayer(layer_size(1),'Name','CriticFC7')
-    leakyReluLayer('Name','leaky7')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC1')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC12')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC13')
+    leakyReluLayer(0.1,'Name','leaky1')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC21')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC22')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC23')
+    leakyReluLayer(0.1,'Name','leaky2')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC31')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC32')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC33')
+    leakyReluLayer(0.1,'Name','leaky3')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC41')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC42')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC43')
+    leakyReluLayer(0.1,'Name','leaky4')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC51')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC52')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC53')
+    leakyReluLayer(0.1,'Name','leaky5')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC61')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC62')
+    fullyConnectedLayer(layer_size(2),'Name','CriticFC63')
+    leakyReluLayer(0.1,'Name','leaky6')
+    fullyConnectedLayer(layer_size(1),'Name','CriticFC71')
+    fullyConnectedLayer(layer_size(1),'Name','CriticFC72')
+    fullyConnectedLayer(layer_size(1),'Name','CriticFC73')
+    leakyReluLayer(0.1,'Name','leaky7')
     fullyConnectedLayer(1,'Name','CriticFC8')];
 
 criticOpts = rlRepresentationOptions('LearnRate',0.1e-3,'UseDevice','gpu');
@@ -75,19 +89,33 @@ critic = rlValueRepresentation(criticNetwork,observationInfo,'Observation',{'sta
 % observation path layers (6 by 1 input and a 2 by 1 output)
 inPath = [ imageInputLayer([numObs 1 1], 'Normalization','none','Name','myobs')
     fullyConnectedLayer(layer_size(2),'Name','actorFC1')
-    leakyReluLayer('Name','leaky1')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC12')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC13')
+    tanhLayer('Name','leaky1')
     fullyConnectedLayer(layer_size(2),'Name','actorFC2')
-    leakyReluLayer('Name','leaky2')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC21')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC23')
+    tanhLayer('Name','leaky2')
     fullyConnectedLayer(layer_size(2),'Name','actorFC3')
-    leakyReluLayer('Name','leaky3')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC32')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC33')
+    tanhLayer('Name','leaky3')
     fullyConnectedLayer(layer_size(2),'Name','actorFC5')
-    leakyReluLayer('Name','leaky4')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC52')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC53')
+    tanhLayer('Name','leaky4')
     fullyConnectedLayer(layer_size(2),'Name','actorFC4')
-    leakyReluLayer('Name','leaky5')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC42')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC43')
+    tanhLayer('Name','leaky5')
     fullyConnectedLayer(layer_size(2),'Name','actorFC8')
-    leakyReluLayer('Name','leaky6')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC82')
+    fullyConnectedLayer(layer_size(2),'Name','actorFC83')
+    tanhLayer('Name','leaky6')
     fullyConnectedLayer(layer_size(1),'Name','actorFC6')
-    leakyReluLayer('Name','leaky7')
+    fullyConnectedLayer(layer_size(1),'Name','actorFC62')
+    fullyConnectedLayer(layer_size(1),'Name','actorFC63')
+    tanhLayer('Name','leaky7')
     fullyConnectedLayer(5,'Name','infc')];
 
 % path layers for mean value (2 by 1 input and 2 by 1 output)
@@ -128,8 +156,8 @@ pool = parpool(8);
 
 agentOptions = rlPPOAgentOptions(...
     'AdvantageEstimateMethod', 'GAE', ...
-    'ClipFactor', 0.1, 'MiniBatchSize',256,...
-    'NumEpoch',20,'DiscountFactor',0.9995,...
+    'ClipFactor', 0.1, 'MiniBatchSize',128,...
+    'NumEpoch',18,'DiscountFactor',0.9995,...
     'EntropyLossWeight',0.02,...
     'SampleTime',env.Ts);
 agent = rlPPOAgent(actor,critic,agentOptions);
